@@ -30,7 +30,7 @@ export class InsertVideoModal extends Modal {
         urlInput = text;
         text.setPlaceholder("https://www.youtube.com/watch?v=…").onChange((value) => { url = value; });
         text.inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
-        text.inputEl.style.width = "100%";
+        text.inputEl.setCssProps({ width: "100%" });
       });
     new Setting(this.contentEl).setName("Title")
       .setDesc("Leave blank to use the video's real title from YouTube.")

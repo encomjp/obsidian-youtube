@@ -79,7 +79,7 @@ in settings overrides it; a system yt-dlp is used only if the download is imposs
 
 ### Manual
 
-Unzip the release into your vault's plugin folder, so that
+Copy `main.js`, `manifest.json` and `styles.css` from the latest release into your vault's plugin folder, so that
 `<vault>/.obsidian/plugins/youtube-native/main.js` exists, then enable **YouTube Native** under
 Settings → Community plugins. To build it yourself:
 
