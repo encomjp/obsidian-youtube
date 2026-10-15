@@ -7,6 +7,10 @@ iframe is never loaded. Desktop only.
 The plugin is self-contained: it downloads and updates its own copy of yt-dlp on first use, and it
 needs no ffmpeg, so there is nothing to install besides the plugin.
 
+<a href="https://www.paypal.com/donate/?hosted_button_id=H4SCC24R8KS4A"><img src="https://img.shields.io/badge/%E2%98%95_Buy_Me_a_Coffee-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="Buy me a coffee" height="36" /></a>
+
+![The YouTube panel with search results next to a note with embedded players](docs/panel.png)
+
 > **Not an official YouTube product.** This plugin is not affiliated with, endorsed by, or supported
 > by YouTube, Google, or Obsidian. It is a wrapper around [yt-dlp](https://github.com/yt-dlp/yt-dlp),
 > an independent open-source fork of youtube-dl, and it may stop working whenever YouTube changes.
@@ -121,6 +125,10 @@ post-processor in `src/main.ts` place it in notes.
   Renaming the saved files does not update the block.
 - YouTube's [player policies](https://developers.google.com/youtube/terms/required-minimum-functionality)
   still apply to use of its streams.
+
+## Support
+
+If this saves you time, you can [buy me a coffee](https://www.paypal.com/donate/?hosted_button_id=H4SCC24R8KS4A).
 
 ## Disclaimer
 
