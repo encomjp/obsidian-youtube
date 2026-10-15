@@ -1,4 +1,4 @@
-// Ported from Starnote.Tests/NoteMediaTests.cs, plus the embed-line and caption rules the plugin adds.
+// Ported from Starnote's media tests, plus the embed-line and caption rules the plugin adds.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {

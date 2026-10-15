@@ -1,9 +1,9 @@
 {
   "id": "youtube-native",
   "name": "YouTube Native",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minAppVersion": "1.5.0",
-  "description": "Ad-free YouTube players with quality selection, real titles, YouTube search, and offline copies in your vault. Uses yt-dlp.",
+  "description": "Play YouTube links in notes with a native player, search YouTube from a side panel, and keep offline copies in your vault. Uses yt-dlp. Not affiliated with YouTube.",
   "author": "encomjp",
   "isDesktopOnly": true
 }

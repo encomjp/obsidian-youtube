@@ -1,5 +1,5 @@
-// Pure YouTube link and Markdown rules, ported from Starnote.Core/NoteMedia.cs and
-// WebEmbedEngine.ParseTimeSeconds. No Obsidian or Node imports, so tests run without the app.
+// Pure YouTube link and Markdown rules, ported from Starnote's note-media rules.
+// No Obsidian or Node imports, so tests run without the app.
 
 export interface NoteVideo {
   /** Canonical watch URL, including the kept start/end range. */

@@ -1,5 +1,5 @@
 // The in-note player. Like Starnote, it loads on click and plays the direct streams yt-dlp resolves
-// (no YouTube iframe, so no ads or embed error 153), with its own controls: a seek bar with buffered
+// (no YouTube iframe, so no embed error 153), with its own controls: a seek bar with buffered
 // progress and the note's start/end range, volume, speed, quality, picture-in-picture, fullscreen,
 // and Starnote's keyboard shortcuts. The same player plays offline copies from the vault.
 
@@ -35,6 +35,8 @@ interface Streams {
   /** Quality menu; empty for offline copies. */
   heights: number[];
   height: number | null;
+  /** Quality was picked automatically (the default cap), shown as "Auto (720p)". */
+  auto: boolean;
 }
 
 interface Range {
@@ -65,12 +67,12 @@ export function renderCard(host: PlayerHost, container: HTMLElement, options: Ca
     });
   }
 
-  const resolve = async (maxHeight: number): Promise<Streams | null> => {
+  const resolve = async (maxHeight: number, auto: boolean): Promise<Streams | null> => {
     try {
       const playback = await host.ytdlp.playback(video.id, maxHeight);
       if (disposed) return null;
       if (playback.title && (!video.title || isGenericTitle(video.title))) shell.setTitle(playback.title);
-      return { videoUrl: playback.video.url, audioUrl: playback.audio?.url ?? null, heights: playback.heights, height: playback.height };
+      return { videoUrl: playback.video.url, audioUrl: playback.audio?.url ?? null, heights: playback.heights, height: playback.height, auto };
     } catch (error) {
       if (!disposed) shell.showError(`Could not play this video in the note. ${(error as Error).message}`, () => void start(), watch);
       return null;
@@ -81,12 +83,14 @@ export function renderCard(host: PlayerHost, container: HTMLElement, options: Ca
     player?.dispose();
     player = null;
     shell.setState("loading");
-    const streams = await resolve(host.settings.maxHeight);
+    const streams = await resolve(host.settings.maxHeight, true);
     if (!streams || disposed) return;
     player = new Player(shell, range, streams, {
       onQuality: async (height) => {
-        const next = await resolve(height);
+        shell.card.addClass("is-buffering");
+        const next = await resolve(height ?? host.settings.maxHeight, height === null);
         if (next && player) player.swap(next);
+        else shell.card.removeClass("is-buffering");
       },
       onError: () => shell.showError("The stream stopped loading. Stream links expire after a few hours; retry to get fresh ones.",
         () => void start(), watch),
@@ -132,7 +136,7 @@ export function renderOfflineCard(container: HTMLElement, options: OfflineCardOp
   const start = () => {
     player?.dispose();
     player = new Player(shell, { start: 0, end: null },
-      { videoUrl: options.videoUrl, audioUrl: options.audioUrl, heights: [], height: null }, {
+      { videoUrl: options.videoUrl, audioUrl: options.audioUrl, heights: [], height: null, auto: false }, {
         onQuality: async () => undefined,
         onError: () => shell.showError("This offline copy could not be played.", null, options.source),
       });
@@ -243,7 +247,12 @@ class Shell {
   }
 }
 
-const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+// YouTube's speed list.
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+const speedLabel = (rate: number) => (Math.abs(rate - 1) < 0.01 ? "Normal" : String(rate));
+/** YouTube's HD/4K badges: 720p and up are HD, 2160p and up are 4K. */
+const qualityBadge = (height: number) => (height >= 2160 ? "4K" : height >= 720 ? "HD" : "");
 
 function loadNumber(key: string, fallback: number): number {
   try {
@@ -281,6 +290,7 @@ class Player {
   private readonly volume: HTMLInputElement;
   private readonly fullBtn: HTMLElement;
   private menu: HTMLElement | null = null;
+  private settingsBtn!: HTMLElement;
   private hideTimer = 0;
   private scrubbing = false;
   private streams: Streams;
@@ -288,7 +298,7 @@ class Player {
   private disposed = false;
 
   constructor(private readonly shell: Shell, private readonly range: Range, streams: Streams,
-    private readonly events: { onQuality: (height: number) => Promise<void>; onError: () => void }) {
+    private readonly events: { onQuality: (height: number | null) => Promise<void>; onError: () => void }) {
     this.streams = streams;
     const stage = shell.stage;
     shell.setState("loading");
@@ -311,7 +321,8 @@ class Player {
     this.volume = volumeBox.createEl("input", { cls: "ytn-volume-slider", attr: { type: "range", min: "0", max: "1", step: "0.05", "aria-label": "Volume" } });
     this.timeEl = row.createSpan({ cls: "ytn-time" });
     row.createDiv({ cls: "ytn-spacer" });
-    iconButton(row, "ytn-settings", "settings", "Speed and quality", () => this.toggleMenu());
+    this.settingsBtn = iconButton(row, "ytn-settings", "settings", "Settings", () => this.toggleMenu());
+    this.updateBadge();
     if (document.pictureInPictureEnabled && streams.videoUrl)
       iconButton(row, "", "picture-in-picture-2", "Picture in picture (p)", () => void this.togglePip());
     this.fullBtn = iconButton(row, "", "maximize", "Fullscreen (f)", () => void this.toggleFullscreen());
@@ -351,6 +362,7 @@ class Player {
     const old = [this.main, this.companion];
     this.streams = streams;
     this.mountMedia(streams, time, playing);
+    this.updateBadge();
     for (const el of old) if (el) { el.pause(); el.removeAttribute("src"); el.load(); el.remove(); }
     this.closeMenu();
   }
@@ -468,7 +480,8 @@ class Player {
       case "f": case "F": void this.toggleFullscreen(); handled(); break;
       case "p": case "P": void this.togglePip(); handled(); break;
       case "<": this.setSpeed(Math.max(v.playbackRate - 0.25, 0.25)); handled(); break;
-      case ">": this.setSpeed(Math.min(v.playbackRate + 0.25, 3)); handled(); break;
+      case ">": this.setSpeed(Math.min(v.playbackRate + 0.25, 2)); handled(); break;
+      case "Escape": if (this.menu) { this.closeMenu(); handled(); } break;
       case ",": if (v.paused) { this.seekBy(-1 / 30); handled(); } break;
       case ".": if (v.paused) { this.seekBy(1 / 30); handled(); } break;
       default:
@@ -505,7 +518,6 @@ class Player {
   private setSpeed(rate: number) {
     this.main.playbackRate = rate;
     if (this.companion) this.companion.playbackRate = rate;
-    if (this.menu) this.renderMenu();
   }
 
   private currentVolume(): number {
@@ -550,47 +562,89 @@ class Player {
     }
   }
 
-  // ---- Speed and quality menu ----
+  // ---- Settings menu (laid out like YouTube's) ----
 
   private toggleMenu() {
-    if (this.menu) this.closeMenu();
-    else {
-      this.menu = this.shell.stage.createDiv({ cls: "ytn-menu" });
-      this.menu.addEventListener("click", (e) => e.stopPropagation());
-      this.renderMenu();
+    if (this.menu) {
+      this.closeMenu();
+      return;
     }
+    this.menu = this.shell.stage.createDiv({ cls: "ytn-menu" });
+    this.menu.addEventListener("click", (e) => e.stopPropagation());
+    this.settingsBtn.addClass("is-open");
+    this.shell.card.addClass("menu-open");
+    this.renderMenu("main");
   }
 
   private closeMenu() {
     this.menu?.remove();
     this.menu = null;
+    this.settingsBtn?.removeClass("is-open");
+    this.shell.card.removeClass("menu-open");
+    this.scheduleHide();
   }
 
-  private renderMenu() {
+  private renderMenu(page: "main" | "speed" | "quality") {
     const menu = this.menu;
     if (!menu) return;
     menu.empty();
-    const section = (label: string) => {
-      menu.createDiv({ cls: "ytn-menu-label", text: label });
-      return menu.createDiv({ cls: "ytn-menu-options" });
-    };
-    const speeds = section("Speed");
-    for (const rate of SPEEDS) {
-      const option = speeds.createEl("button", { cls: "ytn-chip", text: rate === 1 ? "Normal" : `${rate}×`, attr: { type: "button" } });
-      option.toggleClass("is-selected", Math.abs(this.main.playbackRate - rate) < 0.01);
-      option.addEventListener("click", () => this.setSpeed(rate));
-    }
-    if (this.streams.heights.length > 0) {
-      const qualities = section("Quality");
-      for (const height of [...this.streams.heights].reverse()) {
-        const option = qualities.createEl("button", { cls: "ytn-chip", text: height >= 2160 ? `${height}p 4K` : height >= 1440 ? `${height}p HD` : `${height}p`, attr: { type: "button" } });
-        option.toggleClass("is-selected", height === this.streams.height);
-        option.addEventListener("click", () => {
-          option.addClass("is-loading");
-          void this.events.onQuality(height);
-        });
+    menu.setAttr("data-page", page);
+    const panel = menu.createDiv({ cls: "ytn-menu-panel" });
+
+    if (page === "main") {
+      const row = (icon: string, label: string, value: string, badge: string, open: () => void) => {
+        const item = panel.createEl("button", { cls: "ytn-menu-item", attr: { type: "button" } });
+        setIcon(item.createSpan({ cls: "ytn-menu-icon" }), icon);
+        item.createSpan({ cls: "ytn-menu-text", text: label });
+        const valueEl = item.createSpan({ cls: "ytn-menu-value", text: value });
+        if (badge) valueEl.createEl("sup", { cls: "ytn-badge", text: badge });
+        setIcon(item.createSpan({ cls: "ytn-menu-chevron" }), "chevron-right");
+        item.addEventListener("click", open);
+      };
+      const rate = this.main.playbackRate;
+      row("gauge", "Playback speed", SPEEDS.some((s) => Math.abs(s - rate) < 0.01) ? speedLabel(rate) : `Custom (${rate})`, "",
+        () => this.renderMenu("speed"));
+      if (this.streams.heights.length > 0 && this.streams.height) {
+        const h = this.streams.height;
+        row("sliders-horizontal", "Quality", this.streams.auto ? `Auto (${h}p)` : `${h}p`, this.streams.auto ? "" : qualityBadge(h),
+          () => this.renderMenu("quality"));
       }
+      return;
     }
+
+    const header = panel.createEl("button", { cls: "ytn-menu-header", attr: { type: "button" } });
+    setIcon(header.createSpan({ cls: "ytn-menu-back" }), "chevron-left");
+    header.createSpan({ text: page === "speed" ? "Playback speed" : "Quality" });
+    header.addEventListener("click", () => this.renderMenu("main"));
+    const list = panel.createDiv({ cls: "ytn-menu-list" });
+    const option = (label: string, badge: string, selected: boolean, choose: () => void) => {
+      const item = list.createEl("button", { cls: "ytn-menu-option" + (selected ? " is-selected" : ""), attr: { type: "button", role: "menuitemradio", "aria-checked": String(selected) } });
+      const check = item.createSpan({ cls: "ytn-menu-check" });
+      if (selected) setIcon(check, "check");
+      const text = item.createSpan({ cls: "ytn-menu-text", text: label });
+      if (badge) text.createEl("sup", { cls: "ytn-badge", text: badge });
+      item.addEventListener("click", () => { choose(); this.closeMenu(); });
+      return item;
+    };
+
+    if (page === "speed") {
+      for (const rate of SPEEDS) option(speedLabel(rate), "", Math.abs(this.main.playbackRate - rate) < 0.01, () => this.setSpeed(rate));
+    } else {
+      for (const height of [...this.streams.heights].reverse())
+        option(`${height}p`, qualityBadge(height), !this.streams.auto && height === this.streams.height, () => void this.events.onQuality(height));
+      option(this.streams.auto && this.streams.height ? `Auto (${this.streams.height}p)` : "Auto", "", this.streams.auto,
+        () => void this.events.onQuality(null));
+    }
+    // Bring the ticked option into view inside the list only (scrollIntoView would also scroll the note).
+    const selected = list.querySelector<HTMLElement>(".is-selected");
+    if (selected) list.scrollTop = Math.max(0, selected.offsetTop - list.clientHeight / 2 + selected.offsetHeight / 2);
+  }
+
+  /** YouTube's small HD/4K badge on the settings gear. */
+  private updateBadge() {
+    const badge = this.streams.height ? qualityBadge(this.streams.height) : "";
+    if (badge) this.settingsBtn.setAttr("data-badge", badge);
+    else this.settingsBtn.removeAttribute("data-badge");
   }
 
   // ---- Display ----

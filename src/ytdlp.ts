@@ -1,5 +1,5 @@
 // yt-dlp executable management and the calls the plugin makes through it, ported from
-// Starnote.App/YtDlpPlayback.cs (YtDlpTool + YtDlpPlayback) and the offline download runner.
+// Starnote's yt-dlp integration and its offline download runner.
 
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";

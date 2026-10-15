@@ -2,10 +2,18 @@
 
 Starnote's YouTube features as an Obsidian plugin. YouTube links in notes become players that use
 the direct streams [yt-dlp](https://github.com/yt-dlp/yt-dlp) resolves, so YouTube's embedded
-iframe (and its ads) are never loaded. Desktop only.
+iframe is never loaded. Desktop only.
 
 The plugin is self-contained: it downloads and updates its own copy of yt-dlp on first use, and it
 needs no ffmpeg, so there is nothing to install besides the plugin.
+
+> **Not an official YouTube product.** This plugin is not affiliated with, endorsed by, or supported
+> by YouTube, Google, or Obsidian. It is a wrapper around [yt-dlp](https://github.com/yt-dlp/yt-dlp),
+> an independent open-source fork of youtube-dl, and it may stop working whenever YouTube changes.
+> You are responsible for how you use it; see the [disclaimer](#disclaimer).[^1]
+
+[^1]: YouTube is a trademark of Google LLC. Obsidian is a trademark of Dynalist Inc. Their names are
+    used only to describe what the plugin works with.
 
 ## Features
 
@@ -100,8 +108,8 @@ list, so it would fail with `CERTIFICATE_VERIFY_FAILED`. The plugin runs yt-dlp 
 macOS as a retry, pointing it at the system bundle). Certificate checking is never disabled. If a
 proxy is required for programs, set it under **Proxy** in the plugin settings.
 
-`src/youtube.ts` holds the link, timestamp, caption, and insertion rules ported from Starnote's
-`NoteMedia`; `src/formats.ts` the yt-dlp output parsing; both are tested without Obsidian.
+`src/youtube.ts` holds the link, timestamp, caption, and insertion rules ported from Starnote;
+`src/formats.ts` the yt-dlp output parsing; both are tested without Obsidian.
 `src/ytdlp.ts` runs the executable, `src/player.ts` draws the card, `src/livePreview.ts` and the
 post-processor in `src/main.ts` place it in notes.
 
@@ -113,3 +121,30 @@ post-processor in `src/main.ts` place it in notes.
   Renaming the saved files does not update the block.
 - YouTube's [player policies](https://developers.google.com/youtube/terms/required-minimum-functionality)
   still apply to use of its streams.
+
+## Disclaimer
+
+This plugin is an independent project. It is **not affiliated with, endorsed by, sponsored by, or
+supported by YouTube, Google LLC, or Dynalist Inc. (Obsidian)**, and it is not affiliated with the
+yt-dlp or youtube-dl projects. All trademarks belong to their respective owners.
+
+- **How it works.** The plugin is a user interface around yt-dlp. It downloads the unmodified,
+  official yt-dlp release from GitHub and runs it on your computer to look up and fetch publicly
+  available streams. It does not include, bypass, or circumvent DRM, paywalls, age or region
+  restrictions, sign-ins, or any other technical protection measure.
+- **Your responsibility.** You alone are responsible for how you use the plugin and the content you
+  play or save with it. Use it only in compliance with
+  [YouTube's Terms of Service](https://www.youtube.com/t/terms), the rights of content owners, and
+  the copyright and other laws that apply to you. Save offline copies only of content you own, that is
+  licensed for download, or that you otherwise have the right to copy, and only for your personal use.
+  Your employer's or network's IT policies may also apply.
+- **No warranty.** The software is provided "as is", without warranty of any kind, express or implied,
+  including but not limited to merchantability, fitness for a particular purpose, and
+  non-infringement. The plugin may stop working at any time, for example when YouTube changes its
+  service.
+- **No liability.** To the maximum extent permitted by law, the authors and contributors are not
+  liable for any claim, damages, or other liability arising from the software or its use, including
+  data loss, account suspension or termination, network or policy violations, or legal claims by
+  third parties. See [LICENSE](LICENSE) (MIT).
+- **Not legal advice.** Nothing in this project is legal advice. If you are unsure whether a use is
+  permitted, ask a qualified lawyer or the content owner.

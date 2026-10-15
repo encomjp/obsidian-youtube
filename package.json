@@ -1,7 +1,7 @@
 {
   "name": "obsidian-youtube",
-  "version": "0.4.0",
-  "description": "Ad-free YouTube players, title lookup, search, and offline saving for Obsidian notes, ported from Starnote.",
+  "version": "0.5.0",
+  "description": "A native YouTube player, search panel, and offline copies for Obsidian notes, built on yt-dlp. Ported from Starnote.",
   "main": "main.js",
   "type": "module",
   "scripts": {
@@ -10,7 +10,11 @@
     "check": "tsc --noEmit",
     "test": "node --test tests/"
   },
-  "keywords": ["obsidian", "youtube", "yt-dlp"],
+  "keywords": [
+    "obsidian",
+    "youtube",
+    "yt-dlp"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@codemirror/state": "^6.5.2",
@@ -19,5 +23,6 @@
     "esbuild": "^0.25.5",
     "obsidian": "^1.8.7",
     "typescript": "^5.8.3"
-  }
+  },
+  "author": "encomjp"
 }
