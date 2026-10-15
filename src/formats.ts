@@ -116,27 +116,6 @@ export function parseProgress(text: string): DownloadProgress {
   return { percent: Number.isFinite(value) ? value : null, total, speed, eta };
 }
 
-/** The official release asset for this platform. */
-export function releaseAsset(platform: string, arch: string): string {
-  if (platform === "win32") return arch === "arm64" ? "yt-dlp_arm64.exe" : arch === "ia32" ? "yt-dlp_x86.exe" : "yt-dlp.exe";
-  if (platform === "darwin") return "yt-dlp_macos";
-  if (platform === "linux") return arch === "arm64" ? "yt-dlp_linux_aarch64" : arch === "arm" ? "yt-dlp_linux_armv7l" : "yt-dlp_linux";
-  throw new YtDlpError(`No official yt-dlp build for ${platform}/${arch}; set its path in settings.`);
-}
-
-/** The SHA-256 for `asset` in a SHA2-256SUMS file, or null. */
-export function findSha256(contents: string, asset: string): string | null {
-  for (const line of contents.split("\n")) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 2) continue;
-    const name = (parts[parts.length - 1] ?? "").replace(/^\*/, "").replace(/\\/g, "/");
-    const hash = parts[0] ?? "";
-    if (name.slice(name.lastIndexOf("/") + 1).toLowerCase() === asset.toLowerCase() && /^[0-9a-fA-F]{64}$/.test(hash))
-      return hash.toLowerCase();
-  }
-  return null;
-}
-
 /** One offline-save choice: a video height (with the best separate audio when needed) or audio only. */
 export interface OfflineChoice {
   label: string;

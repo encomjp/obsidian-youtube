@@ -9,6 +9,9 @@ import { HUB_VIEW, HubView, YOUTUBE_ICON, type HubHost, type LibraryEntry } from
 import { renderCard, renderOfflineCard, setPlayerApp } from "./player.ts";
 import { DownloadQueue, type DownloadItem } from "./queue.ts";
 import { FormatPickerModal, InsertVideoModal } from "./ui.ts";
+import { EngineChain, type EngineChoice } from "./engines.ts";
+import type { Engine } from "./engine.ts";
+import { JsEngine } from "./jsengine.ts";
 import { removeFolder, YtDlp } from "./ytdlp.ts";
 import {
   captionTitle, insertBlock, isGenericTitle, OFFLINE_BLOCK, offlineBlock, parseEmbedLine, parseOfflineBlock,
@@ -16,22 +19,22 @@ import {
 } from "./youtube.ts";
 
 interface Settings {
+  engine: EngineChoice;
   ytDlpPath: string;
   maxHeight: number;
   thumbnails: boolean;
   autoFillTitles: boolean;
-  autoUpdate: boolean;
   proxy: string;
   ribbonAtBottom: boolean;
   library: LibraryEntry[];
 }
 
 const DEFAULTS: Settings = {
+  engine: "auto",
   ytDlpPath: "",
   maxHeight: 720,
   thumbnails: true,
   autoFillTitles: true,
-  autoUpdate: true,
   proxy: "",
   ribbonAtBottom: true,
   library: [],
@@ -39,7 +42,9 @@ const DEFAULTS: Settings = {
 
 export default class YouTubeNativePlugin extends Plugin implements HubHost {
   override settings: Settings = { ...DEFAULTS };
-  ytdlp!: YtDlp;
+  /** What the rest of the plugin talks to: the built-in engine, with the user's own yt-dlp as an optional fallback. */
+  ytdlp!: Engine;
+  private external!: YtDlp;
   private readonly titles = new Map<string, Promise<string | null>>();
   private readonly filling = new Set<string>();
   queue!: DownloadQueue;
@@ -48,12 +53,8 @@ export default class YouTubeNativePlugin extends Plugin implements HubHost {
   override async onload() {
     setPlayerApp(this.app);
     this.settings = { ...DEFAULTS, ...((await this.loadData()) as Partial<Settings> | null) };
-    this.ytdlp = new YtDlp(() => this.settings);
-    let installNotice: Notice | null = null;
-    this.ytdlp.onInstall = (installing) => {
-      if (installing) installNotice = new Notice("Setting up YouTube playback: downloading yt-dlp (first use only)…", 0);
-      else installNotice?.hide();
-    };
+    this.external = new YtDlp(() => this.settings);
+    this.ytdlp = new EngineChain(() => this.settings.engine, new JsEngine(() => this.settings), this.external);
 
     // Obsidian's Lucide set has no YouTube glyph, so register one (100×100 viewBox).
     addIcon(YOUTUBE_ICON, '<path fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round" d="M12 30c1-9 7-14 16-15 15-1 29-1 44 0 9 1 15 6 16 15 1 13 1 27 0 40-1 9-7 14-16 15-15 1-29 1-44 0-9-1-15-6-16-15-1-13-1-27 0-40z"/><path fill="currentColor" d="M41 35v30l26-15z"/>');
@@ -104,11 +105,6 @@ export default class YouTubeNativePlugin extends Plugin implements HubHost {
       id: "fill-titles",
       name: "Fill in YouTube titles in this note",
       editorCallback: (editor, view) => void this.fillAllTitles(editor, view),
-    });
-    this.addCommand({
-      id: "update-ytdlp",
-      name: "Update the managed yt-dlp",
-      callback: () => void this.updateYtDlp(),
     });
   }
 
@@ -374,20 +370,6 @@ export default class YouTubeNativePlugin extends Plugin implements HubHost {
     new Notice(`Filled ${filled} of ${embeds.length} YouTube title${embeds.length === 1 ? "" : "s"}.`);
   }
 
-  private async updateYtDlp() {
-    const notice = new Notice("Updating yt-dlp…", 0);
-    try {
-      const managed = await this.ytdlp.managedExecutable(true);
-      const active = await this.ytdlp.executable();
-      notice.setMessage(active === managed
-        ? `yt-dlp ${await this.ytdlp.version()} is installed.`
-        : `The managed yt-dlp was updated, but ${active} is used because it comes first. Clear the setting or PATH copy to use the managed one.`);
-    } catch (error) {
-      notice.setMessage(`yt-dlp update failed: ${(error as Error).message}`);
-    }
-    window.setTimeout(() => notice.hide(), 6000);
-  }
-
   /** Ask for a quality, then add the download to the queue and point the user at it. */
   private async pickAndQueue(video: NoteVideo, notePath: string | null, embed: string | null) {
     const title = video.title && !isGenericTitle(video.title) ? video.title : (await this.fetchTitle(video.id)) ?? video.id;
@@ -511,26 +493,19 @@ class YouTubeSettingTab extends PluginSettingTab {
       .addToggle((t) => t.setValue(s.ribbonAtBottom).onChange((v) => { s.ribbonAtBottom = v; save(); this.plugin.placeRibbon?.(); }));
 
     new Setting(containerEl).setName("Tools").setHeading();
-    new Setting(containerEl).setName("yt-dlp path")
-      .setDesc("Optional. Leave blank to let the plugin download and update its own copy from the official release (verified with SHA-256).")
-      .addText((t) => t.setPlaceholder("/usr/bin/yt-dlp").setValue(s.ytDlpPath).onChange((v) => { s.ytDlpPath = v.trim(); save(); }));
     new Setting(containerEl).setName("Proxy")
       .setDesc("Optional. Only if your network requires a proxy for programs, e.g. http://proxy.company.local:8080. " +
         "HTTPS inspection by a work firewall is handled automatically through the system certificate store.")
       .addText((t) => t.setPlaceholder("http://host:port").setValue(s.proxy).onChange((v) => { s.proxy = v.trim(); save(); }));
-    new Setting(containerEl).setName("Keep yt-dlp updated")
-      .setDesc("Check for a newer official release every 14 days.")
-      .addToggle((t) => t.setValue(s.autoUpdate).onChange((v) => { s.autoUpdate = v; save(); }));
-
-    const status = new Setting(containerEl).setName("yt-dlp status").setDesc("Not checked.");
-    status.addButton((b) => b.setButtonText("Check").onClick(async () => {
-      status.setDesc("Checking…");
-      try {
-        const exe = await this.plugin.ytdlp.executable();
-        status.setDesc(`${await this.plugin.ytdlp.version()} at ${exe}`);
-      } catch (error) {
-        status.setDesc((error as Error).message);
-      }
-    }));
+    const engine = new Setting(containerEl).setName("Stream engine");
+    const refresh = async () => { engine.setDesc(await this.plugin.ytdlp.describe()); };
+    engine.addDropdown((d) => d
+      .addOptions({ auto: "Built-in, yt-dlp as fallback", builtin: "Built-in only", ytdlp: "yt-dlp only" })
+      .setValue(s.engine)
+      .onChange((v) => { s.engine = v as EngineChoice; save(); void refresh(); }));
+    new Setting(containerEl).setName("yt-dlp path (optional)")
+      .setDesc("Only used if you installed yt-dlp yourself and chose it above. Leave blank to look for it on the PATH.")
+      .addText((t) => t.setPlaceholder("/usr/bin/yt-dlp").setValue(s.ytDlpPath).onChange((v) => { s.ytDlpPath = v.trim(); save(); void refresh(); }));
+    void refresh();
   }
 }

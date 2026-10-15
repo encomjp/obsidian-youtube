@@ -4,11 +4,11 @@
 // and Starnote's keyboard shortcuts. The same player plays offline copies from the vault.
 
 import { setIcon, type App } from "obsidian";
-import type { YtDlp } from "./ytdlp.ts";
+import type { Engine } from "./engine.ts";
 import { captionTitle, formatDuration, isGenericTitle, watchUrl, type NoteVideo } from "./youtube.ts";
 
 export interface PlayerHost {
-  ytdlp: YtDlp;
+  ytdlp: Engine;
   settings: { maxHeight: number; thumbnails: boolean; autoFillTitles: boolean };
   /** The real title from YouTube's oEmbed endpoint, or null. */
   fetchTitle(id: string): Promise<string | null>;

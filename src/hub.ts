@@ -4,7 +4,7 @@
 import { ItemView, Menu, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
 import { renderCard, renderOfflineCard, type PlayerHost } from "./player.ts";
 import type { DownloadItem, DownloadQueue } from "./queue.ts";
-import type { SearchResult } from "./ytdlp.ts";
+import type { SearchResult } from "./engine.ts";
 import {
   formatDuration, offlineBlock, parseYouTube, videoMarkdown, watchUrl, type NoteVideo,
 } from "./youtube.ts";

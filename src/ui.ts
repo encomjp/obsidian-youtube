@@ -2,7 +2,7 @@
 
 import { App, Modal, Notice, Setting, TextComponent } from "obsidian";
 import { offlineChoices, type OfflineChoice } from "./formats.ts";
-import type { YtDlp } from "./ytdlp.ts";
+import type { Engine } from "./engine.ts";
 import { formatBytes, parseYouTube, type NoteVideo } from "./youtube.ts";
 
 export class InsertVideoModal extends Modal {
@@ -49,7 +49,7 @@ export class InsertVideoModal extends Modal {
 
 /** Pick an offline quality; the download itself runs in the panel's queue. */
 export class FormatPickerModal extends Modal {
-  constructor(app: App, private readonly ytdlp: YtDlp, private readonly video: NoteVideo, private readonly title: string,
+  constructor(app: App, private readonly ytdlp: Engine, private readonly video: NoteVideo, private readonly title: string,
     private readonly onPick: (choice: OfflineChoice, title: string) => void) {
     super(app);
   }

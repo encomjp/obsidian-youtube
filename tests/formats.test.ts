@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findSha256, offlineChoices, parsePlayback, parseProgress, releaseAsset, type StreamFormat } from "../src/formats.ts";
+import { offlineChoices, parsePlayback, parseProgress, type StreamFormat } from "../src/formats.ts";
 
 const fmt = (o: Record<string, unknown>) => ({ url: "https://rr1.googlevideo.com/videoplayback?x=1", ...o });
 
@@ -41,18 +41,6 @@ test("streams without an http URL are ignored", () => {
 test("download progress lines are parsed", () => {
   assert.deepEqual(parseProgress(" 42.5%|  12.30MiB| 1.20MiB/s|00:08"), { percent: 42.5, total: "12.30MiB", speed: "1.20MiB/s", eta: "00:08" });
   assert.equal(parseProgress("N/A|N/A|N/A|N/A").percent, null);
-});
-
-test("release assets and checksums match the official release layout", () => {
-  assert.equal(releaseAsset("linux", "x64"), "yt-dlp_linux");
-  assert.equal(releaseAsset("linux", "arm64"), "yt-dlp_linux_aarch64");
-  assert.equal(releaseAsset("darwin", "arm64"), "yt-dlp_macos");
-  assert.equal(releaseAsset("win32", "x64"), "yt-dlp.exe");
-  const hash = "a".repeat(64);
-  const sums = `${"b".repeat(64)}  yt-dlp.exe\n${hash}  yt-dlp_linux\n${"c".repeat(64)}  yt-dlp_linux_aarch64\n`;
-  assert.equal(findSha256(sums, "yt-dlp_linux"), hash);
-  assert.equal(findSha256(sums, "yt-dlp_macos"), null);
-  assert.equal(findSha256("short  yt-dlp_linux", "yt-dlp_linux"), null);
 });
 
 test("offline choices pair video-only streams with separate audio, without ffmpeg", () => {

@@ -2,37 +2,26 @@
 // Starnote's yt-dlp integration and its offline download runner.
 
 import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { promises as fs, constants as fsConstants } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { requestUrl } from "obsidian";
-import { findSha256, parsePlayback, parseProgress, readFormats, releaseAsset, YtDlpError, type DownloadProgress, type Playback, type StreamFormat } from "./formats.ts";
+import type { Engine, SearchResult, VideoFormats } from "./engine.ts";
+import { parsePlayback, parseProgress, readFormats, YtDlpError, type DownloadProgress, type Playback } from "./formats.ts";
 import { isVideoId, watchUrl } from "./youtube.ts";
 
 export { YtDlpError } from "./formats.ts";
 export type { DownloadProgress, Playback, StreamFormat } from "./formats.ts";
+export type { SearchResult } from "./engine.ts";
 
-const REFRESH_MS = 14 * 24 * 3600 * 1000;
-const MIN_EXECUTABLE_BYTES = 1024 * 1024;
-const MAX_EXECUTABLE_BYTES = 80 * 1024 * 1024;
 const MAX_METADATA_CHARS = 16 * 1024 * 1024;
 const METADATA_TIMEOUT_MS = 60_000;
 
 export interface YtDlpSettings {
-  /** Optional override; blank uses the plugin's own managed copy. */
+  /** Optional path to the user's own yt-dlp; blank looks for `yt-dlp` on PATH. */
   ytDlpPath: string;
-  autoUpdate: boolean;
   /** Optional proxy for yt-dlp, e.g. http://proxy.company.local:8080. */
   proxy: string;
-}
-
-export interface SearchResult {
-  id: string;
-  title: string;
-  channel: string;
-  duration: number | null;
-  views: number | null;
 }
 
 export interface RunResult {
@@ -41,68 +30,38 @@ export interface RunResult {
   stderr: string;
 }
 
-export class YtDlp {
-  private installing: Promise<string> | null = null;
-
-  /** Called while the managed copy is being downloaded, so the UI can say why it waits. */
-  onInstall: ((installing: boolean) => void) | null = null;
+export class YtDlp implements Engine {
+  readonly id = "yt-dlp" as const;
 
   constructor(private readonly settings: () => YtDlpSettings) {}
 
-  static cacheDirectory(): string {
-    const home = os.homedir();
-    if (process.platform === "win32")
-      return path.join(process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"), "obsidian-youtube-native");
-    if (process.platform === "darwin") return path.join(home, "Library", "Caches", "obsidian-youtube-native");
-    return path.join(process.env.XDG_CACHE_HOME ?? path.join(home, ".cache"), "obsidian-youtube-native");
-  }
-
-  static managedExecutablePath(): string {
-    return path.join(YtDlp.cacheDirectory(), process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
-  }
-
-  /**
-   * The plugin is self-contained: it downloads and updates its own yt-dlp. A path in settings
-   * overrides that, and a system yt-dlp is used only when the managed download is impossible
-   * (for example, offline on first use).
-   */
+  /** The configured executable, else `yt-dlp` on PATH. The plugin never downloads or updates it. */
   async executable(): Promise<string> {
     const configured = this.settings().ytDlpPath.trim();
     if (configured) {
       if (await isExecutable(configured)) return configured;
       throw new YtDlpError(`The yt-dlp path in settings is not an executable file: ${configured}`);
     }
+    const onPath = await findOnPath(process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
+    if (onPath) return onPath;
+    throw new YtDlpError("yt-dlp was not found. Install it (https://github.com/yt-dlp/yt-dlp#installation) and set its path in settings.");
+  }
+
+  async available(): Promise<boolean> {
     try {
-      return await this.managedExecutable(false);
-    } catch (error) {
-      const onPath = await findOnPath(process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
-      if (onPath) return onPath;
-      throw error;
+      await this.executable();
+      return true;
+    } catch {
+      return false;
     }
   }
 
-  /** The managed copy; `force` installs the latest release even when the cache is fresh. */
-  async managedExecutable(force: boolean): Promise<string> {
-    const target = YtDlp.managedExecutablePath();
-    const stat = await usableStat(target);
-    if (stat && !force && (!this.settings().autoUpdate || Date.now() - stat.mtimeMs < REFRESH_MS)) return target;
-
-    if (!this.installing) {
-      this.onInstall?.(true);
-      this.installing = installLatest(target).finally(() => {
-        this.installing = null;
-        this.onInstall?.(false);
-      });
-    }
+  async describe(): Promise<string> {
     try {
-      return await this.installing;
+      const exe = await this.executable();
+      return `yt-dlp ${await this.version()} at ${exe}`;
     } catch (error) {
-      // An update failure keeps the cached resolver, as Starnote does.
-      if (stat) {
-        console.warn("[youtube-native] yt-dlp update failed; keeping the cached copy", error);
-        return target;
-      }
-      throw error;
+      return (error as Error).message;
     }
   }
 
@@ -119,7 +78,7 @@ export class YtDlp {
   }
 
   /** Every format, for the offline-save picker. */
-  async formats(id: string): Promise<{ title: string | null; formats: StreamFormat[]; duration: number | null }> {
+  async formats(id: string): Promise<VideoFormats> {
     const root = await this.info(id, null);
     return {
       title: typeof root.title === "string" ? root.title : null,
@@ -400,47 +359,4 @@ async function findOnPath(name: string): Promise<string | null> {
     if (await isExecutable(candidate)) return candidate;
   }
   return null;
-}
-
-async function usableStat(file: string) {
-  try {
-    const stat = await fs.stat(file);
-    return stat.isFile() && stat.size > MIN_EXECUTABLE_BYTES && stat.size < MAX_EXECUTABLE_BYTES ? stat : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Fetch the latest official release, verify it against the published SHA-256 sums, and install it. */
-async function installLatest(target: string): Promise<string> {
-  const release = await requestUrl({
-    url: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest",
-    headers: { Accept: "application/vnd.github+json" },
-  });
-  const tag = (release.json as { tag_name?: unknown })?.tag_name;
-  if (typeof tag !== "string" || !/^[A-Za-z0-9._-]{1,40}$/.test(tag)) throw new YtDlpError("The yt-dlp release metadata was invalid.");
-
-  const asset = releaseAsset(process.platform, process.arch);
-  const base = `https://github.com/yt-dlp/yt-dlp/releases/download/${encodeURIComponent(tag)}/`;
-  const sums = await requestUrl({ url: base + "SHA2-256SUMS" });
-  if (sums.text.length > 128 * 1024) throw new YtDlpError("The yt-dlp checksum response was too large.");
-  const expected = findSha256(sums.text, asset);
-  if (!expected) throw new YtDlpError("The yt-dlp release checksum was missing.");
-
-  const body = (await requestUrl({ url: base + asset })).arrayBuffer;
-  if (body.byteLength <= MIN_EXECUTABLE_BYTES || body.byteLength >= MAX_EXECUTABLE_BYTES)
-    throw new YtDlpError("The yt-dlp download had an unexpected size.");
-  const bytes = new Uint8Array(body);
-  const actual = createHash("sha256").update(bytes).digest("hex");
-  if (actual !== expected) throw new YtDlpError("The yt-dlp download did not match the official checksum.");
-
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const partial = `${target}.${randomUUID()}.download`;
-  try {
-    await fs.writeFile(partial, bytes, { mode: 0o755 });
-    await fs.rename(partial, target);
-  } finally {
-    await fs.rm(partial, { force: true });
-  }
-  return target;
 }
