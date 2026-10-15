@@ -70,6 +70,15 @@ in settings overrides it; a system yt-dlp is used only if the download is imposs
 
 ## Install
 
+### Easiest: BRAT (installs and keeps it updated)
+
+1. Install **BRAT** from Settings → Community plugins → Browse, and enable it.
+2. Run the command **BRAT: Add a beta plugin for testing** and enter `encomjp/obsidian-youtube`, or click
+   [this link](obsidian://brat?plugin=encomjp/obsidian-youtube) with BRAT installed.
+3. Enable the plugin under Settings → Community plugins. BRAT then updates it with every release.
+
+### Manual
+
 Unzip the release into your vault's plugin folder, so that
 `<vault>/.obsidian/plugins/youtube-native/main.js` exists, then enable **YouTube Native** under
 Settings → Community plugins. To build it yourself:
