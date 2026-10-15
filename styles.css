@@ -574,7 +574,12 @@
   position: relative;
   overflow-y: auto;
   min-height: 0;
-  scrollbar-width: thin;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .ytn-menu-list {
+    scrollbar-width: thin;
+  }
 }
 
 .ytn-menu-check {
@@ -723,11 +728,11 @@
   text-align: center;
 }
 
-.ytn-hub {
+.view-content.ytn-hub {
   display: flex;
   flex-direction: column;
   gap: var(--size-4-2);
-  padding: var(--size-4-2) !important;
+  padding: var(--size-4-2);
   container-type: inline-size;
 }
 

@@ -282,7 +282,7 @@ function readEntries(root: Record<string, unknown>): SearchResult[] {
 
 function parseJson(text: string): Record<string, unknown> {
   try {
-    const value = JSON.parse(text);
+    const value: unknown = JSON.parse(text);
     if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
   } catch {
     // fall through
@@ -331,7 +331,7 @@ export function run(executable: string, args: string[], options: {
     });
     let stdout = "", stderr = "", pending = "", finished = false, overflow = false;
     const stop = () => { if (!finished) killTree(child.pid, () => child.kill()); };
-    const timer = options.timeoutMs ? setTimeout(stop, options.timeoutMs) : null;
+    const timer = options.timeoutMs ? window.setTimeout(stop, options.timeoutMs) : null;
     options.signal?.addEventListener("abort", stop, { once: true });
 
     child.stdout.setEncoding("utf8");
@@ -353,12 +353,12 @@ export function run(executable: string, args: string[], options: {
     child.stderr.on("data", (chunk: string) => { if (stderr.length < 64 * 1024) stderr += chunk; });
     child.on("error", (error) => {
       finished = true;
-      if (timer) clearTimeout(timer);
+      if (timer) window.clearTimeout(timer);
       reject(new YtDlpError(`Could not start ${path.basename(executable)}: ${error.message}`));
     });
     child.on("close", (code) => {
       finished = true;
-      if (timer) clearTimeout(timer);
+      if (timer) window.clearTimeout(timer);
       if (pending && options.onLine) options.onLine(pending);
       if (overflow) reject(new YtDlpError("yt-dlp returned more output than expected."));
       else resolve({ code, stdout, stderr });

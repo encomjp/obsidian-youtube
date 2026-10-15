@@ -1,6 +1,6 @@
 {
   "name": "obsidian-youtube",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A native YouTube player, search panel, and offline copies for Obsidian notes, built on yt-dlp. Ported from Starnote.",
   "main": "main.js",
   "type": "module",

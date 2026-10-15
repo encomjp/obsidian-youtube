@@ -6,12 +6,12 @@ import {
 } from "obsidian";
 import { livePreviewExtension } from "./livePreview.ts";
 import { HUB_VIEW, HubView, YOUTUBE_ICON, type HubHost, type LibraryEntry } from "./hub.ts";
-import { renderCard, renderOfflineCard } from "./player.ts";
+import { renderCard, renderOfflineCard, setPlayerApp } from "./player.ts";
 import { DownloadQueue, type DownloadItem } from "./queue.ts";
 import { FormatPickerModal, InsertVideoModal } from "./ui.ts";
 import { removeFolder, YtDlp } from "./ytdlp.ts";
 import {
-  captionTitle, insertBlock, isGenericTitle, OFFLINE_BLOCK, offlineBlock, parseEmbedLine, parseOfflineBlock, parseYouTube,
+  captionTitle, insertBlock, isGenericTitle, OFFLINE_BLOCK, offlineBlock, parseEmbedLine, parseOfflineBlock,
   safeFileName, videoFromEmbedSrc, videoMarkdown, watchUrl, type NoteVideo,
 } from "./youtube.ts";
 
@@ -46,6 +46,7 @@ export default class YouTubeNativePlugin extends Plugin implements HubHost {
   private readonly libraryListeners = new Set<() => void>();
 
   override async onload() {
+    setPlayerApp(this.app);
     this.settings = { ...DEFAULTS, ...((await this.loadData()) as Partial<Settings> | null) };
     this.ytdlp = new YtDlp(() => this.settings);
     let installNotice: Notice | null = null;

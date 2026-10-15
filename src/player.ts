@@ -3,7 +3,7 @@
 // progress and the note's start/end range, volume, speed, quality, picture-in-picture, fullscreen,
 // and Starnote's keyboard shortcuts. The same player plays offline copies from the vault.
 
-import { setIcon } from "obsidian";
+import { setIcon, type App } from "obsidian";
 import type { YtDlp } from "./ytdlp.ts";
 import { captionTitle, formatDuration, isGenericTitle, watchUrl, type NoteVideo } from "./youtube.ts";
 
@@ -254,21 +254,19 @@ const speedLabel = (rate: number) => (Math.abs(rate - 1) < 0.01 ? "Normal" : Str
 /** YouTube's HD/4K badges: 720p and up are HD, 2160p and up are 4K. */
 const qualityBadge = (height: number) => (height >= 2160 ? "4K" : height >= 720 ? "HD" : "");
 
+let storageApp: App | null = null;
+/** Give the player Obsidian's vault-scoped local storage (volume and mute are remembered per vault). */
+export function setPlayerApp(app: App) { storageApp = app; }
+
 function loadNumber(key: string, fallback: number): number {
-  try {
-    const value = Number(window.localStorage.getItem(key));
-    return window.localStorage.getItem(key) !== null && Number.isFinite(value) ? value : fallback;
-  } catch {
-    return fallback;
-  }
+  const raw: unknown = storageApp?.loadLocalStorage(key);
+  if (raw === null || raw === undefined) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function saveValue(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // storage unavailable; the setting just isn't remembered
-  }
+  storageApp?.saveLocalStorage(key, value);
 }
 
 /**
@@ -553,7 +551,7 @@ class Player {
   }
 
   private async togglePip() {
-    if (!(this.main instanceof HTMLVideoElement)) return;
+    if (!this.main.instanceOf(HTMLVideoElement)) return;
     try {
       if (document.pictureInPictureElement === this.main) await document.exitPictureInPicture();
       else await this.main.requestPictureInPicture();

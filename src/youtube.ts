@@ -247,7 +247,7 @@ export function formatBytes(bytes: number | null | undefined): string {
 export function safeFileName(title: string, fallback: string): string {
   // Characters Windows, macOS, Linux, or Obsidian links reject; then a length that keeps the full
   // vault path under Windows' 260-character limit; then no trailing dots or spaces (Windows strips them).
-  const clean = (text: string) => text.replace(/[\\/:*?"<>|#^[\]\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim()
+  const clean = (text: string) => text.replace(/(?![\u0080-\u009f])[\\/:*?"<>|#^[\]\p{Cc}]/gu, " ").replace(/\s+/g, " ").trim()
     .slice(0, 80).replace(/[. ]+$/, "").trim();
   let name = clean(title) || clean(fallback) || "video";
   // CON, PRN, AUX, NUL, COM1–9, and LPT1–9 are reserved on Windows even with an extension.

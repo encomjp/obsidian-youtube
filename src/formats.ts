@@ -90,8 +90,8 @@ function readFormat(item: unknown): StreamFormat | null {
   } catch {
     return null;
   }
-  const str = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : "");
-  const num = (k: string) => (typeof o[k] === "number" && Number.isFinite(o[k]) ? (o[k] as number) : null);
+  const str = (k: string) => (typeof o[k] === "string" ? o[k] : "");
+  const num = (k: string) => (typeof o[k] === "number" && Number.isFinite(o[k]) ? o[k] : null);
   const vcodec = str("vcodec"), acodec = str("acodec");
   return {
     url: o.url,
