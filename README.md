@@ -139,6 +139,14 @@ post-processor in `src/main.ts` place it in notes.
 - YouTube's [player policies](https://developers.google.com/youtube/terms/required-minimum-functionality)
   still apply to use of its streams.
 
+## Disclosures
+
+- **Network use.** The plugin contacts these services:
+  - **YouTube** (`youtube.com`, `i.ytimg.com`): video titles (oEmbed), thumbnails, and, through yt-dlp, the video information and streams for the videos you play or save.
+  - **GitHub** (`github.com/yt-dlp/yt-dlp` releases): to fetch yt-dlp and its checksum file (see [yt-dlp](#yt-dlp)).
+- **Files outside your vault.** yt-dlp is stored in your user cache folder (not the vault) and run as a program on your computer; temporary download folders are created and removed. Offline copies are saved inside your vault, in the attachment folder.
+- **No** account, payment, ads or telemetry.
+
 ## Support
 
 If this saves you time, you can [buy me a coffee](https://www.paypal.com/donate/?hosted_button_id=H4SCC24R8KS4A).
