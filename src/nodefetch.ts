@@ -7,8 +7,23 @@ import net from "node:net";
 import tls from "node:tls";
 import zlib from "node:zlib";
 import { Readable, type Duplex } from "node:stream";
+import { isCertificateError, systemCertificates } from "./certs.ts";
 
 export type NodeFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export interface NodeFetchOptions {
+  /** Supplies the operating system's certificates; tests replace it. */
+  systemCertificates?: () => Promise<string[] | null>;
+}
+
+/**
+ * Certificate trust for one fetch. `ca` stays unset (Node's defaults) until a certificate error shows
+ * that the request needs the system store; from then on every request uses `ca`.
+ */
+interface Trust {
+  ca: string[] | undefined;
+  load: () => Promise<string[] | null>;
+}
 
 const MAX_REDIRECTS = 10;
 
@@ -17,6 +32,7 @@ interface ConnectOptions {
   hostname?: string | null;
   port?: number | string | null;
   servername?: string;
+  ca?: string[];
 }
 
 class ProxyAgent extends https.Agent {
@@ -31,8 +47,10 @@ class ProxyAgent extends https.Agent {
     const port = Number(proxy.port || (proxy.protocol === "https:" ? 443 : 80));
     const host = String(options.host ?? options.hostname ?? "");
     const targetPort = options.port ?? 443;
-    const connect = (proxy.protocol === "https:" ? tls.connect : net.connect) as typeof net.connect;
-    const socket = connect({ host: proxy.hostname.replace(/^\[|\]$/g, ""), port });
+    // An https:// proxy is itself verified against the same trusted set.
+    const socket: net.Socket = proxy.protocol === "https:"
+      ? tls.connect({ host: proxy.hostname.replace(/^\[|\]$/g, ""), port, ca: options.ca })
+      : net.connect({ host: proxy.hostname.replace(/^\[|\]$/g, ""), port });
     const fail = (error: Error) => { socket.destroy(); (callback as ((err: Error) => void) | undefined)?.(error); };
     socket.once("error", fail);
     const readyEvent = proxy.protocol === "https:" ? "secureConnect" : "connect";
@@ -55,7 +73,7 @@ class ProxyAgent extends https.Agent {
         socket.off("error", fail);
         const status = /^HTTP\/1\.\d (\d{3})/.exec(buffer.subarray(0, end).toString("latin1"));
         if (!status || status[1] !== "200") { fail(new Error(`Proxy refused the connection (${status?.[1] ?? "no status"}).`)); return; }
-        const secure = tls.connect({ socket, servername: options.servername ?? host });
+        const secure = tls.connect({ socket, servername: options.servername ?? host, ca: options.ca });
         callback?.(null, secure);
       };
       socket.on("data", onData);
@@ -107,20 +125,28 @@ function abortError(signal: AbortSignal): Error {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
-/** Build a fetch that reads the proxy URL from `getProxy` on every call (settings can change). */
-export function createNodeFetch(getProxy: () => string = () => ""): NodeFetch {
+/**
+ * Build a fetch that reads the proxy URL from `getProxy` on every call (settings can change).
+ *
+ * Certificates: the first attempt uses Node's defaults. When a certificate error shows that the
+ * chain is signed by a root only the operating system trusts (an inspecting firewall), the request
+ * is repeated once with the system store added, and that set is used from then on. Verification
+ * stays on in both cases.
+ */
+export function createNodeFetch(getProxy: () => string = () => "", options: NodeFetchOptions = {}): NodeFetch {
+  const trust: Trust = { ca: undefined, load: options.systemCertificates ?? systemCertificates };
   return async function nodeFetch(input, init) {
     const request = new Request(input, init);
     const body = request.body ? Buffer.from(await request.arrayBuffer()) : undefined;
     // Use the caller's own signal: `request.signal` follows it through a WeakRef to the Request's
     // controller, so once `request` is garbage collected an abort would silently never arrive.
     const signal = init?.signal ?? (input instanceof Request ? input.signal : null) ?? request.signal;
-    return send(request.url, request.method, new Headers(request.headers), body, signal, getProxy().trim(), request.redirect, 0);
+    return send(request.url, request.method, new Headers(request.headers), body, signal, getProxy().trim(), request.redirect, 0, trust);
   };
 }
 
 function send(urlText: string, method: string, headers: Headers, body: Buffer | undefined, signal: AbortSignal,
-  proxy: string, redirect: RequestRedirect, depth: number): Promise<Response> {
+  proxy: string, redirect: RequestRedirect, depth: number, trust: Trust): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     if (signal.aborted) return reject(abortError(signal));
     const url = new URL(urlText);
@@ -133,7 +159,13 @@ function send(urlText: string, method: string, headers: Headers, body: Buffer | 
     const transport = url.protocol === "https:" ? https : http;
     let agent: ProxyAgent | null = null;
     try { agent = proxyFor(proxy, url); } catch (error) { return reject(error instanceof Error ? error : new Error(String(error))); }
-    const req = transport.request(url, { method, headers: out, ...(agent ? { agent } : {}) }, (res) => {
+    const requestOptions: https.RequestOptions = {
+      method,
+      headers: out,
+      ...(agent ? { agent } : {}),
+      ...(url.protocol === "https:" && trust.ca ? { ca: trust.ca } : {}),
+    };
+    const req = transport.request(url, requestOptions, (res) => {
       signal.removeEventListener("abort", onAbort);
       const status = res.statusCode ?? 0;
       const location = res.headers.location;
@@ -146,7 +178,7 @@ function send(urlText: string, method: string, headers: Headers, body: Buffer | 
         const nextHeaders = new Headers(headers);
         if (new URL(next).origin !== url.origin) { nextHeaders.delete("authorization"); nextHeaders.delete("cookie"); }
         if (toGet) { nextHeaders.delete("content-length"); nextHeaders.delete("content-type"); }
-        void send(next, toGet ? "GET" : method, nextHeaders, toGet ? undefined : body, signal, proxy, redirect, depth + 1).then(resolve, reject);
+        void send(next, toGet ? "GET" : method, nextHeaders, toGet ? undefined : body, signal, proxy, redirect, depth + 1, trust).then(resolve, reject);
         return;
       }
       let stream: Readable = res;
@@ -176,7 +208,20 @@ function send(urlText: string, method: string, headers: Headers, body: Buffer | 
     });
     const onAbort = () => { req.destroy(abortError(signal)); reject(abortError(signal)); };
     signal.addEventListener("abort", onAbort, { once: true });
-    req.on("error", (error) => { signal.removeEventListener("abort", onAbort); reject(signal.aborted ? abortError(signal) : error); });
+    req.on("error", (error) => {
+      signal.removeEventListener("abort", onAbort);
+      if (signal.aborted) return reject(abortError(signal));
+      if (trust.ca === undefined && isCertificateError(error)) {
+        // The handshake failed before any request was sent, so repeating this hop is safe (even for POST).
+        void trust.load().then((ca) => {
+          if (!ca) return reject(error);
+          trust.ca = ca;
+          return send(urlText, method, headers, body, signal, proxy, redirect, depth, trust).then(resolve, reject);
+        }, () => reject(error));
+        return;
+      }
+      reject(error);
+    });
     if (body) req.write(body);
     req.end();
   });

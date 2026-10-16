@@ -8,6 +8,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Engine, SearchResult, VideoFormats } from "./engine.ts";
 import { parsePlayback, parseProgress, readFormats, YtDlpError, type DownloadProgress, type Playback } from "./formats.ts";
+import { CERTIFICATE_HELP, systemCertificateBundle } from "./certs.ts";
 import { isVideoId, watchUrl } from "./youtube.ts";
 
 export { YtDlpError } from "./formats.ts";
@@ -203,10 +204,7 @@ export class YtDlp implements Engine {
       const retry = await run(executable, withCerts(true), { ...options, env });
       if (!isCertificateFailure(retry)) return retry;
     }
-    throw new YtDlpError(
-      "A firewall or security program on this network intercepts HTTPS (deep packet inspection), and its " +
-      "certificate is not trusted by this computer's certificate store. Ask IT to install the company " +
-      "root certificate in the system store, or set a proxy in the plugin settings if the network requires one.");
+    throw new YtDlpError(CERTIFICATE_HELP);
   }
 }
 
@@ -252,20 +250,6 @@ function parseJson(text: string): Record<string, unknown> {
 /** yt-dlp sometimes reports a failed page with exit code 0, so look at the error text itself. */
 export function isCertificateFailure(result: RunResult): boolean {
   return /CERTIFICATE_VERIFY_FAILED|certificate verify failed/i.test(result.stderr);
-}
-
-async function systemCertificateBundle(): Promise<string | null> {
-  for (const file of [
-    "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/ca-bundle.pem",
-    "/etc/ssl/cert.pem", "/opt/homebrew/etc/openssl@3/cert.pem", "/usr/local/etc/openssl@3/cert.pem",
-  ]) {
-    try {
-      if ((await fs.stat(file)).isFile()) return file;
-    } catch {
-      // try the next location
-    }
-  }
-  return null;
 }
 
 function errorSummary(result: RunResult, fallback: string): string {

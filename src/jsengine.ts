@@ -12,6 +12,7 @@ import type { Engine, SearchResult, VideoFormats } from "./engine.ts";
 import { YtDlpError } from "./formats.ts";
 import type { DownloadProgress, Playback, StreamFormat } from "./formats.ts";
 import { isVideoId } from "./youtube.ts";
+import { CERTIFICATE_HELP, isCertificateError } from "./certs.ts";
 import { createNodeFetch } from "./nodefetch.ts";
 import {
   CHUNK_BYTES, classifyListUrl, formatBytes, formatEta, formatSpeed, mapFormats, pageSlice,
@@ -417,6 +418,7 @@ function feedLister(feed: Feed, nodes: (f: Feed) => unknown, channelName = ""): 
 function describeError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : "";
   if (!message) return fallback;
+  if (isCertificateError(error)) return `${fallback} ${CERTIFICATE_HELP} (${message})`;
   if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|fetch failed|socket hang up|Proxy/i.test(message))
     return `${fallback} Network problem: ${message}`;
   return `${fallback} ${message}`;

@@ -11,6 +11,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createNodeFetch } from "../src/nodefetch.ts";
+import { isCertificateError } from "../src/certs.ts";
 import { CERT, KEY } from "./helpers/cert.ts";
 
 const nodeFetch = createNodeFetch();
@@ -609,12 +610,16 @@ const caFile = path.join(os.tmpdir(), `obsidian-youtube-test-ca-${process.pid}.p
 fs.writeFileSync(caFile, CERT);
 process.on("exit", () => { try { fs.unlinkSync(caFile); } catch { /* already gone */ } });
 
-/** Runs createNodeFetch in a child process that trusts the test certificate. */
-function viaChild(proxy: string, target: string, mode = ""): Promise<any> {
+/**
+ * Runs createNodeFetch in a child process. By default the child trusts the test certificate through
+ * NODE_EXTRA_CA_CERTS; with `trustByEnv` false that variable is removed, so only the "system" mode can trust it.
+ */
+function viaChild(proxy: string, target: string, mode = "", trustByEnv = true): Promise<any> {
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_NO_WARNINGS: "1" };
+  delete env.NODE_EXTRA_CA_CERTS;
+  if (trustByEnv) env.NODE_EXTRA_CA_CERTS = caFile;
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [path.join(here, "helpers", "proxychild.ts"), proxy, target, mode], {
-      env: { ...process.env, NODE_EXTRA_CA_CERTS: caFile, NODE_NO_WARNINGS: "1" },
-    });
+    const child = spawn(process.execPath, [path.join(here, "helpers", "proxychild.ts"), proxy, target, mode], { env });
     let out = "";
     child.stdout.on("data", (c) => { out += c; });
     child.on("error", reject);
@@ -687,5 +692,49 @@ test("repeated requests through the same proxy reuse one agent and both succeed"
     assert.equal(r.body, "secure-ok");
     assert.equal(r.second, "secure-ok");
     assert.ok(proxy.log.length >= 1 && proxy.log.length <= 2);
+  } finally { proxy.close(); target.close(); }
+});
+
+// ---------- the operating system's certificate store ----------
+
+// These tests need a process that does not already trust the test certificate through the environment.
+const untrustedByEnv = { skip: Boolean(process.env.NODE_EXTRA_CA_CERTS) && "NODE_EXTRA_CA_CERTS already trusts the test certificate" };
+
+test("a certificate that Node's roots reject is retried with the system store, loaded once", untrustedByEnv, async () => {
+  const target = await tlsTarget();
+  let loads = 0;
+  const f = createNodeFetch(() => "", { systemCertificates: async () => { loads++; return [CERT]; } });
+  try {
+    assert.equal(await (await f(target.url)).text(), "secure-ok");
+    assert.equal(await (await f(target.url)).text(), "secure-ok");
+    assert.equal(loads, 1, "the second request goes straight to the trusted set");
+  } finally { target.close(); }
+});
+
+test("with no system store the certificate error surfaces and verification stays on", untrustedByEnv, async () => {
+  const target = await tlsTarget();
+  const f = createNodeFetch(() => "", { systemCertificates: async () => null });
+  try {
+    await assert.rejects(f(target.url), (e: unknown) => isCertificateError(e));
+    assert.deepEqual(target.hosts, [], "the request is never answered without verification");
+  } finally { target.close(); }
+});
+
+test("a POST is retried intact after a certificate error and reaches the server once", untrustedByEnv, async () => {
+  const target = await tlsTarget();
+  const f = createNodeFetch(() => "", { systemCertificates: async () => [CERT] });
+  try {
+    const r = await f(target.url, { method: "POST", body: "payload" });
+    assert.equal(await r.text(), "secure-ok");
+    assert.equal(target.hosts.length, 1);
+  } finally { target.close(); }
+});
+
+test("through a proxy, a certificate error is retried with the system store", untrustedByEnv, async () => {
+  const proxy = await connectProxy(), target = await tlsTarget();
+  try {
+    const r = await viaChild(proxy.url, target.url, "system,twice", false);
+    assert.equal(r.body, "secure-ok");
+    assert.equal(r.second, "secure-ok");
   } finally { proxy.close(); target.close(); }
 });
